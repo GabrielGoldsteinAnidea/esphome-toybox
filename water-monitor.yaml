@@ -5,7 +5,7 @@ esphome:
   platformio_options:
     board_build.mcu: esp32s2
     board_build.variant: esp32s2
-
+  
 # Thanks to this configuration for the initial legwork https://github.com/kbx81/esphome-configs/blob/main/dev/esp-funhouse.yaml
 
 
@@ -14,7 +14,7 @@ esphome:
 external_components:
   - source:
       type: local
-      path: external_components
+      path: external_components/esphome-toybox/mprls
     components:
       - mprls
     refresh: always
