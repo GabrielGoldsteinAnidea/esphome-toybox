@@ -14,9 +14,9 @@ esphome:
 external_components:
   - source:
       type: local
-      path: external_components/esphome-toybox/components
-    components:
-      - mprls
+      path: /external_components/esphome-toybox/components/mprls
+    # components:
+    #     - mprls
     refresh: always
 
 esp32:
