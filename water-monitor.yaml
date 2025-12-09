@@ -14,7 +14,7 @@ esphome:
 external_components:
   - source:
       type: local
-      path: external_components/esphome-toybox/mprls
+      path: external_components/esphome-toybox/components
     components:
       - mprls
     refresh: always
