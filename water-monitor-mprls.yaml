@@ -353,23 +353,34 @@ sensor:
   #     name: AHT20 Humidity
   #   update_interval: 15s
   - platform: mprls
-    maximum_pascal: 300.0
-    minimum_pascal: 0.0
+    #address: 0x18
     update_interval: 1s
-    address: 0x18
     pressure:
-      unit_of_measurement: mmH2O
-      #    filters:
-
       id: mprls_pressure
       name: MPRLS Pressure
+      unit_of_measurement: mmHg
+
+      filters:
+        - sliding_window_moving_average:
+            window_size: 60
+            send_every: 15
+            send_first_at: 15
+    # Pressure in native units of sensor
+    # pressure_max: 300.0
+    # pressure_min: 0.0
+    # Whole number percentages
+    output_max: 22.5
+    output_min: 2.5
+
   - platform: template
     name: "Chlorine Tank Level"
     id: chlorine_tank_level
-    unit_of_measurement: "Gallons"
+    unit_of_measurement: "gal"
+    # 35 gal tank, 30 in of water.  1 in of water = 1.86645mmHg
     lambda: |-
-      return id(mprls_pressure).state * 35.0 * 39.36 / 1.42 / 30.0;  // Convert pressure to gallons
+      return id(mprls_pressure).state * 35.0 / 30.0 / 1.86645;  // Convert pressure to gallons
     update_interval: 60s
+
   - platform: dps310
     temperature:
       id: dps310_temperature
