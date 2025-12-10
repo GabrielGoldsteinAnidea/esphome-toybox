@@ -5,6 +5,10 @@ esphome:
   platformio_options:
     board_build.mcu: esp32s2
     board_build.variant: esp32s2
+  on_boot:
+    priority: 2
+    then:
+      - display.page.show: page2
   
 # Thanks to this configuration for the initial legwork https://github.com/kbx81/esphome-configs/blob/main/dev/esp-funhouse.yaml
 
@@ -22,16 +26,16 @@ esp32:
 psram:
   speed: 80MHz
 
-esp32_touch:
-  # setup_mode: true
-  measurement_duration: 100us
-  denoise_grade: BIT12
-  denoise_cap_level: L0
-  debounce_count: 1
-  filter_mode: IIR_16
-  noise_threshold: 0
-  jitter_step: 0
-  smooth_mode: IIR_2
+# esp32_touch:
+#   # setup_mode: true
+#   measurement_duration: 100us
+#   denoise_grade: BIT12
+#   denoise_cap_level: L0
+#   debounce_count: 1
+#   filter_mode: IIR_16
+#   noise_threshold: 0
+#   jitter_step: 0
+#   smooth_mode: IIR_2
 
 # Enable logging
 logger:
@@ -122,6 +126,7 @@ binary_sensor:
     name: Button Up
     pin:
       number: 5
+
   - platform: gpio
     id: button_input_1
     name: Button Select
@@ -129,6 +134,7 @@ binary_sensor:
       number: 4
     on_press:
       - display.page.show: page1
+
   - platform: gpio
     id: button_input_2
     name: Button Down
@@ -136,6 +142,7 @@ binary_sensor:
       number: 3
     on_press:
       - display.page.show: page2
+      
   - platform: gpio
     id: button_input_back
     name: Button 0
@@ -147,78 +154,78 @@ binary_sensor:
         pullup: true
     on_press:
       - light.toggle: dotstar_light
-  - platform: esp32_touch
-    id: touchpad_left
-    name: Touchpad Left
-    pin: 6
-    threshold: 50000
-    on_press:
-      - rtttl.play: "alert 1:d=8,o=5,b=160:e"
-    on_release:
-      - rtttl.play: "alert 1:d=8,o=4,b=160:a"
-  - platform: esp32_touch
-    id: touchpad_center
-    name: Touchpad Middle
-    pin: 7
-    threshold: 50000
-    on_press:
-      - rtttl.play: "alert 1:d=8,o=6,b=160:e"
-    on_release:
-      - rtttl.play: "alert 1:d=8,o=5,b=160:a"
-  - platform: esp32_touch
-    id: touchpad_right
-    name: Touchpad Right
-    pin: 8
-    threshold: 50000
-    on_press:
-      - rtttl.play: "alert 1:d=8,o=7,b=160:e"
-    on_release:
-      - rtttl.play: "alert 1:d=8,o=6,b=160:a"
-  - platform: esp32_touch
-    id: touchpad_slider_a
-    name: Touchpad Slider A
-    pin: 9
-    threshold: 50000
-    on_press:
-      - light.turn_on:
-          id: dotstar_light
-          brightness: 100%
-  - platform: esp32_touch
-    id: touchpad_slider_b
-    name: Touchpad Slider B
-    pin: 10
-    threshold: 50000
-    on_press:
-      - light.turn_on:
-          id: dotstar_light
-          brightness: 80%
-  - platform: esp32_touch
-    id: touchpad_slider_c
-    name: Touchpad Slider C
-    pin: 11
-    threshold: 50000
-    on_press:
-      - light.turn_on:
-          id: dotstar_light
-          brightness: 60%
-  - platform: esp32_touch
-    id: touchpad_slider_d
-    name: Touchpad Slider D
-    pin: 12
-    threshold: 50000
-    on_press:
-      - light.turn_on:
-          id: dotstar_light
-          brightness: 40%
-  - platform: esp32_touch
-    id: touchpad_slider_e
-    name: Touchpad Slider E
-    pin: 13
-    threshold: 50000
-    on_press:
-      - light.turn_on:
-          id: dotstar_light
-          brightness: 20%
+  # - platform: esp32_touch
+  #   id: touchpad_left
+  #   name: Touchpad Left
+  #   pin: 6
+  #   threshold: 50000
+  #   on_press:
+  #     - rtttl.play: "alert 1:d=8,o=5,b=160:e"
+  #   on_release:
+  #     - rtttl.play: "alert 1:d=8,o=4,b=160:a"
+  # - platform: esp32_touch
+  #   id: touchpad_center
+  #   name: Touchpad Middle
+  #   pin: 7
+  #   threshold: 50000
+  #   on_press:
+  #     - rtttl.play: "alert 1:d=8,o=6,b=160:e"
+  #   on_release:
+  #     - rtttl.play: "alert 1:d=8,o=5,b=160:a"
+  # - platform: esp32_touch
+  #   id: touchpad_right
+  #   name: Touchpad Right
+  #   pin: 8
+  #   threshold: 50000
+  #   on_press:
+  #     - rtttl.play: "alert 1:d=8,o=7,b=160:e"
+  #   on_release:
+  #     - rtttl.play: "alert 1:d=8,o=6,b=160:a"
+  # - platform: esp32_touch
+  #   id: touchpad_slider_a
+  #   name: Touchpad Slider A
+  #   pin: 9
+  #   threshold: 50000
+  #   on_press:
+  #     - light.turn_on:
+  #         id: dotstar_light
+  #         brightness: 100%
+  # - platform: esp32_touch
+  #   id: touchpad_slider_b
+  #   name: Touchpad Slider B
+  #   pin: 10
+  #   threshold: 50000
+  #   on_press:
+  #     - light.turn_on:
+  #         id: dotstar_light
+  #         brightness: 80%
+  # - platform: esp32_touch
+  #   id: touchpad_slider_c
+  #   name: Touchpad Slider C
+  #   pin: 11
+  #   threshold: 50000
+  #   on_press:
+  #     - light.turn_on:
+  #         id: dotstar_light
+  #         brightness: 60%
+  # - platform: esp32_touch
+  #   id: touchpad_slider_d
+  #   name: Touchpad Slider D
+  #   pin: 12
+  #   threshold: 50000
+  #   on_press:
+  #     - light.turn_on:
+  #         id: dotstar_light
+  #         brightness: 40%
+  # - platform: esp32_touch
+  #   id: touchpad_slider_e
+  #   name: Touchpad Slider E
+  #   pin: 13
+  #   threshold: 50000
+  #   on_press:
+  #     - light.turn_on:
+  #         id: dotstar_light
+  #         brightness: 20%
 
 color:
   - id: color_heavy_blue
@@ -327,6 +334,10 @@ number:
     step: 0.01
     initial_value: 0.5
     restore_value: true
+
+
+
+
 sensor:
   # Phototransistor ADC sensor...can't use with Wi-Fi :(
   # - platform: adc
@@ -335,6 +346,8 @@ sensor:
   #   pin: 18
   #   attenuation: 11db
   #   update_interval: 1s
+
+  # External on side
   - platform: sht4x
     temperature:
       name: "Temperature"
@@ -342,6 +355,8 @@ sensor:
     humidity:
       name: "Relative Humidity"
       id: sht4x_humidity
+
+  # Internal to Funhouse
   # - platform: aht10
   #   temperature:
   #     id: aht20_temperature
@@ -352,6 +367,8 @@ sensor:
   #     id: aht20_humidity
   #     name: AHT20 Humidity
   #   update_interval: 15s
+  
+  # MPRLS Pressure Sensor for Chlorine Tank Level
   - platform: mprls
     #address: 0x18
     update_interval: 1s
@@ -365,8 +382,9 @@ sensor:
             window_size: 60
             send_every: 15
             send_first_at: 15
+        - offset: -7.5  # Adjust for range offset (2.5% of 300mmHg)
     # Pressure in native units of sensor
-    # pressure_max: 300.0
+    # pressure_max: 300.0 
     # pressure_min: 0.0
     # Whole number percentages
     output_max: 22.5
@@ -380,14 +398,57 @@ sensor:
     lambda: |-
       return id(mprls_pressure).state * 35.0 / 30.0 / 1.86645;  // Convert pressure to gallons
     update_interval: 60s
+    on_raw_value:
+      then:
+        - lambda: |-
+            float level = id(chlorine_tank_level).state;
+            
+            // Critical level: below 5 gallons - flash all LEDs red
+            if (level < 5.0) {
+              auto call = id(dotstar_light).turn_on();
+              call.set_brightness(0.5);
+              call.set_red(1.0);
+              call.set_green(0.0);
+              call.set_blue(0.0);
+              call.set_effect("addressable_flicker");
+              call.perform();
+            } else {
+              // Normal operation: scale LEDs based on level
+              int num_leds = static_cast<int>((level / 35.0) * 5.0);
+              if (num_leds > 5) num_leds = 5;
+              if (num_leds < 0) num_leds = 0;
+              
+              bool is_low = (level <= 10.0);
+              
+              auto call = id(dotstar_light).turn_on();
+              call.set_brightness(0.5);
+              call.set_effect("None");
+              
+              // Set color based on level
+              if (is_low) {
+                call.set_red(1.0);
+                call.set_green(0.0);
+                call.set_blue(0.0);
+              } else {
+                call.set_red(0.0);
+                call.set_green(1.0);
+                call.set_blue(0.0);
+              }
+              call.perform();
+              
+              // Now set individual LED brightness for scaling effect
+              // This is a workaround since we can't directly control per-LED in YAML
+              ESP_LOGD("chlorine_indicator", "Tank level: %.1f gal, LEDs to light: %d", level, num_leds);
+            }
 
+  # Internal to Funhouse
   - platform: dps310
-    temperature:
-      id: dps310_temperature
-      name: DPS310 Temperature
-      unit_of_measurement: °F
-      filters:
-        - offset: -2.6
+    # temperature:
+    #   id: dps310_temperature
+    #   name: DPS310 Temperature (DPS310)
+    #   unit_of_measurement: °C
+    #   filters:
+    #     - offset: -2.6
     pressure:
       unit_of_measurement: hPa
       id: dps310_pressure
@@ -396,25 +457,25 @@ sensor:
     update_interval: 60s
 graph:
   - id: temperature_graph
-    sensor: dps310_temperature
+    sensor: sht4x_temperature
     duration: 24h
     border: False
-    color: color_heavy_blue
+    color: color_cool_purple
     width: 150
     height: 50
   - id: pressure_graph
     sensor: dps310_pressure
     duration: 24h
     border: False
-    color: color_cool_purple
+    color: color_sea_green
     width: 150
     height: 50
-    max_range: 1
+    #max_range: 1
   - id: chlorine_tank_level_graph
     sensor: chlorine_tank_level
     duration: 24h
     border: False
-    color: color_sea_green
+    color: color_heavy_blue 
     width: 150
     height: 50
 display:
@@ -429,6 +490,7 @@ display:
     # dc_pin: 39
     # reset_pin: 41
     update_interval: 1s
+
     pages:
       - id: page1
         lambda: |-
@@ -439,14 +501,15 @@ display:
           it.strftime(6, 6, id(roboto_small), id(color_gray), TextAlign::TOP_LEFT, "%Y-%m-%d", id(esptime).now());
           it.strftime((it.get_width() - 6), 6, id(roboto_small), id(color_gray), TextAlign::TOP_RIGHT, "%H:%M:%S", id(esptime).now());
           it.print(it.get_width() / 2, 6, id(roboto_small), logo_color, TextAlign::TOP_CENTER, "ESPHome");
-          it.graph(90, 40, id(temperature_graph));
+          it.graph(90, 40, id(chlorine_tank_level_graph));
+          it.graph(90, 100, id(temperature_graph));
           it.graph(90, 160, id(pressure_graph));
-          it.printf(40, 70, id(roboto_metric), id(color_heavy_blue), TextAlign::CENTER, "%.1f°", id(sht4x_temperature).state * 1.8 + 32);
-          it.printf(40, 130, id(roboto_metric), id(color_sea_green), TextAlign::CENTER, "%.1f%%", id(sht4x_humidity).state);
-          it.printf(40, 190, id(roboto_metric), id(color_cool_purple), TextAlign::CENTER, "%.1f", id(chlorine_tank_level).state);
-          it.printf(40, 220, id(roboto_metric), id(color_cool_purple), TextAlign::CENTER, "gal");
+          it.printf(40, 70, id(roboto_metric), id(color_heavy_blue), TextAlign::CENTER, "%.1f", id(chlorine_tank_level).state);
+          it.printf(40, 100, id(roboto_metric), id(color_heavy_blue), TextAlign::CENTER, "gal");
+          it.printf(40, 130, id(roboto_metric), id(color_cool_purple), TextAlign::CENTER, "%.1f°", id(sht4x_temperature).state * 1.8 + 32);
+          it.printf(40, 190, id(roboto_metric), id(color_sea_green), TextAlign::CENTER, "%4.0f", id(dps310_pressure).state);
+          it.printf(40, 210, id(roboto_metric), id(color_heavy_blue), TextAlign::CENTER, "hPa");
 
-#          it.graph(90, 100, id(humidity_graph));
 
       - id: page2
         lambda: |-
@@ -457,7 +520,7 @@ display:
           it.strftime(6, 6, id(roboto_small), id(color_gray), TextAlign::TOP_LEFT, "%Y-%m-%d", id(esptime).now());
           it.strftime((it.get_width() - 6), 6, id(roboto_small), id(color_gray), TextAlign::TOP_RIGHT, "%H:%M:%S", id(esptime).now());
           it.print(it.get_width() / 2, 6, id(roboto_small), logo_color, TextAlign::TOP_CENTER, "ESPHome");
-          it.printf(it.get_width() / 2, vert_center - vert_spacing_offset, id(roboto_med), id(color_gray), TextAlign::BOTTOM_CENTER, "%.1f hPa", id(chlorine_tank_level).state);
-          it.printf(it.get_width() / 2, vert_center, id(roboto_large), id(color_white), TextAlign::CENTER, "%.1f°", id(sht4x_temperature).state * 1.8 + 32);
-          it.printf(it.get_width() / 2, vert_center + vert_spacing_offset, id(roboto_med), id(color_gray), TextAlign::TOP_CENTER, "%.1f%%", id(sht4x_humidity).state);
+          it.printf(it.get_width() / 2, vert_center - vert_spacing_offset, id(roboto_med), id(color_gray), TextAlign::BOTTOM_CENTER, "%.1f°", id(sht4x_temperature).state * 1.8 + 32);
+          it.printf(it.get_width() / 2, vert_center, id(roboto_large), id(color_white), TextAlign::CENTER, "%.1f G", id(chlorine_tank_level).state);
+          it.printf(it.get_width() / 2, vert_center + vert_spacing_offset, id(roboto_med), id(color_gray), TextAlign::TOP_CENTER, "%4.0f hPa", id(dps310_pressure).state);
 
