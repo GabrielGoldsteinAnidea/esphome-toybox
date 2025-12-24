@@ -43,6 +43,7 @@ logger:
   level: DEBUG
   logs:
     mprls: DEBUG
+    graph: ERROR
 
 ota:
   - platform: esphome
@@ -463,6 +464,7 @@ graph:
     color: color_cool_purple
     width: 150
     height: 50
+    y_grid: 10
   - id: pressure_graph
     sensor: dps310_pressure
     duration: 24h
@@ -470,6 +472,7 @@ graph:
     color: color_sea_green
     width: 150
     height: 50
+    y_grid: 100
     #max_range: 1
   - id: chlorine_tank_level_graph
     sensor: chlorine_tank_level
@@ -478,6 +481,7 @@ graph:
     color: color_heavy_blue 
     width: 150
     height: 50
+    y_grid: 10
 display:
   - platform: st7789v
     id: main_lcd
