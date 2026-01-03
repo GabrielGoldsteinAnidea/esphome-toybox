@@ -403,44 +403,66 @@ sensor:
       then:
         - lambda: |-
             float level = id(chlorine_tank_level).state;
-            
-            // Critical level: below 5 gallons - flash all LEDs red
-            if (level < 5.0) {
-              auto call = id(dotstar_light).turn_on();
-              call.set_brightness(0.5);
-              call.set_red(1.0);
-              call.set_green(0.0);
-              call.set_blue(0.0);
-              call.set_effect("addressable_flicker");
-              call.perform();
-            } else {
-              // Normal operation: scale LEDs based on level
-              int num_leds = static_cast<int>((level / 35.0) * 5.0);
-              if (num_leds > 5) num_leds = 5;
-              if (num_leds < 0) num_leds = 0;
-              
-              bool is_low = (level <= 10.0);
-              
-              auto call = id(dotstar_light).turn_on();
-              call.set_brightness(0.5);
-              call.set_effect("None");
-              
-              // Set color based on level
-              if (is_low) {
-                call.set_red(1.0);
-                call.set_green(0.0);
-                call.set_blue(0.0);
-              } else {
-                call.set_red(0.0);
-                call.set_green(1.0);
-                call.set_blue(0.0);
-              }
-              call.perform();
-              
-              // Now set individual LED brightness for scaling effect
-              // This is a workaround since we can't directly control per-LED in YAML
-              ESP_LOGD("chlorine_indicator", "Tank level: %.1f gal, LEDs to light: %d", level, num_leds);
-            }
+            // compute number of LEDs to light (1..5)
+            int num_leds = (int)round((level / 35.0) * 5.0);
+            if (num_leds < 1) num_leds = 1;
+            if (num_leds > 5) num_leds = 5;
+            // Save num to global static var for the templated actions below if needed (not required here)
+        - if:
+            condition:
+              lambda: 'return id(chlorine_tank_level).state < 5.0;'
+            then:
+              - script.execute: chlorine_flash
+            else:
+              # Ensure strip is on and set base color (red if <=10, green otherwise)
+              - light.turn_on:
+                  id: dotstar_light
+                  brightness: 50%
+                  effect: None
+                  red: !lambda 'return id(chlorine_tank_level).state <= 10.0 ? 1.0f : 0.0f;'
+                  green: !lambda 'return id(chlorine_tank_level).state <= 10.0 ? 0.0f : 1.0f;'
+                  blue: 0.0
+              # Light the first N LEDs to the chosen color
+              - light.addressable_set:
+                  id: dotstar_light
+                  range_from: 0
+                  range_to: !lambda |-
+                    {
+                      float level = id(chlorine_tank_level).state;
+                      int num_leds = (int)round((level / 35.0) * 5.0);
+                      if (num_leds < 1) num_leds = 1;
+                      if (num_leds > 5) num_leds = 5;
+                      return num_leds - 1;
+                    }
+                  red: !lambda 'return id(chlorine_tank_level).state <= 10.0 ? 1.0f : 0.0f;'
+                  green: !lambda 'return id(chlorine_tank_level).state <= 10.0 ? 0.0f : 1.0f;'
+                  blue: 0.0
+              # Turn remaining LEDs off (if any)
+              - if:
+                  condition:
+                    lambda: |-
+                      {
+                        float level = id(chlorine_tank_level).state;
+                        int num_leds = (int)round((level / 35.0) * 5.0);
+                        if (num_leds < 1) num_leds = 1;
+                        if (num_leds > 5) num_leds = 5;
+                        return num_leds < 5;
+                      }
+                  then:
+                    - light.addressable_set:
+                        id: dotstar_light
+                        range_from: !lambda |-
+                          {
+                            float level = id(chlorine_tank_level).state;
+                            int num_leds = (int)round((level / 35.0) * 5.0);
+                            if (num_leds < 1) num_leds = 1;
+                            if (num_leds > 5) num_leds = 5;
+                            return num_leds;
+                          }
+                        range_to: 4
+                        red: 0.0
+                        green: 0.0
+                        blue: 0.0
 
   # Internal to Funhouse
   - platform: dps310
@@ -527,4 +549,28 @@ display:
           it.printf(it.get_width() / 2, vert_center - vert_spacing_offset, id(roboto_med), id(color_gray), TextAlign::BOTTOM_CENTER, "%.1f°", id(sht4x_temperature).state * 1.8 + 32);
           it.printf(it.get_width() / 2, vert_center, id(roboto_large), id(color_white), TextAlign::CENTER, "%.1f G", id(chlorine_tank_level).state);
           it.printf(it.get_width() / 2, vert_center + vert_spacing_offset, id(roboto_med), id(color_gray), TextAlign::TOP_CENTER, "%4.0f hPa", id(dps310_pressure).state);
+
+script:
+  - id: chlorine_flash
+    mode: restart  # allow re-trigger to restart flashing
+    then:
+      - repeat:
+          count: 6        # flash 6 times (adjust)
+          then:
+            - light.addressable_set:
+                id: dotstar_light
+                range_from: 0
+                range_to: 4
+                red: 100%
+                green: 0%
+                blue: 0%
+            - delay: 300ms
+            - light.addressable_set:
+                id: dotstar_light
+                range_from: 0
+                range_to: 4
+                red: 0%
+                green: 0%
+                blue: 0%
+            - delay: 300ms
 
