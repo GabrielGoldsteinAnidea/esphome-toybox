@@ -115,7 +115,28 @@ class CoffeeMaker : public PollingComponent, public i2c::I2CDevice {
   GPIOPin *gpio_clock_{nullptr};
   GPIOPin *gpio_data_{nullptr};
   GPIOPin *gpio_strobe_{nullptr};
-  GPIOPin *gpio_zio_{nullptr};};
+  GPIOPin *gpio_zio_{nullptr};
+
+  // Protocol-specific state variables (from sample.ino analysis)
+  uint8_t current_frame_[9];       // Store complete 9-byte frame
+  uint8_t frame_byte_count_{0};    // Bytes received in current frame
+  uint8_t frame_complete_{0};      // Flag indicating frame ready for parsing
+  
+  // Multiplexer state (S0, S1, S2 from sample.ino)
+  uint8_t mux_s0_{0};
+  uint8_t mux_s1_{0};
+  uint8_t mux_s2_{0};
+  
+  // LED state averaging (from sample.ino - over 500 strobe cycles)
+  uint16_t led_state_count_[10];   // Counter for each LED state
+  uint8_t led_state_[10];          // 0=OFF, 1=ON, 2=FLASHING
+  uint16_t averaging_sample_count_{0};  // Sample counter for averaging window
+  
+  // Button command state
+  uint8_t pending_button_command_{0};  // Button number pending execution (1-6)
+  uint8_t button_strobe_counter_{0};   // Counter for button press duration
+  uint8_t button_active_{0};           // Button press currently active
+};
 
 }  // namespace coffee_maker
 }  // namespace esphome
