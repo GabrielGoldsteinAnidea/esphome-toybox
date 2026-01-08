@@ -1,5 +1,6 @@
 import esphome.codegen as cg
-from esphome.components import i2c, sensor, binary_sensor
+from esphome import pins
+from esphome.components import i2c, sensor, binary_sensor, switch
 import esphome.config_validation as cv
 from esphome.const import (
     CONF_ID,
@@ -8,7 +9,7 @@ from esphome.const import (
     STATE_CLASS_MEASUREMENT,
 )
 
-DEPENDENCIES = ["i2c", "binary_sensor", "sensor"]
+DEPENDENCIES = ["i2c", "binary_sensor", "sensor", "switch"]
 
 coffee_maker_ns = cg.esphome_ns.namespace("coffee_maker")
 CoffeeMaker = coffee_maker_ns.class_("CoffeeMaker", cg.PollingComponent, i2c.I2CDevice)
@@ -31,17 +32,30 @@ CONF_COFFEE_FLAVOR = "coffee_flavor"
 CONF_PIN_CLOCK = "pin_clock"
 CONF_PIN_DATA = "pin_data"
 CONF_PIN_STROBE = "pin_strobe"
-CONF_PIN_ZIO = "pin_zio"
+CONF_PIN_BUTTONS_A = "pin_buttons_a"
+CONF_PIN_BUTTONS_B = "pin_buttons_b"
+CONF_PIN_BUTTON_ONOFF = "pin_button_onoff"
+CONF_ENABLE = "enable"
+
+CoffeeMakerEnableSwitch = coffee_maker_ns.class_(
+    "CoffeeMakerEnableSwitch", switch.Switch
+)
 
 CONFIG_SCHEMA = (
     cv.Schema(
         {
             cv.GenerateID(): cv.declare_id(CoffeeMaker),
-            # GPIO Pins (as integer pin numbers)
-            cv.Required(CONF_PIN_CLOCK): cv.int_range(0, 40),
-            cv.Required(CONF_PIN_DATA): cv.int_range(0, 40),
-            cv.Required(CONF_PIN_STROBE): cv.int_range(0, 40),
-            cv.Required(CONF_PIN_ZIO): cv.int_range(0, 40),
+            # GPIO Pins
+            cv.Required(CONF_PIN_CLOCK): pins.internal_gpio_input_pin_schema,
+            cv.Required(CONF_PIN_DATA): pins.internal_gpio_input_pin_schema,
+            cv.Required(CONF_PIN_STROBE): pins.internal_gpio_input_pin_schema,
+            cv.Required(CONF_PIN_BUTTONS_A): pins.internal_gpio_output_pin_schema,
+            cv.Required(CONF_PIN_BUTTONS_B): pins.internal_gpio_output_pin_schema,
+            cv.Required(CONF_PIN_BUTTON_ONOFF): pins.internal_gpio_output_pin_schema,
+            cv.Optional(CONF_ENABLE): switch.switch_schema(
+                CoffeeMakerEnableSwitch,
+                default_restore_mode="ALWAYS_OFF",
+            ),
             # Binary Sensors
             cv.Optional(CONF_ONE_CUP_READY): binary_sensor.binary_sensor_schema(
                 device_class=DEVICE_CLASS_PROBLEM,
@@ -100,22 +114,34 @@ async def to_code(config):
     await cg.register_component(var, config)
     await i2c.register_i2c_device(var, config)
 
-    # GPIO Pin Configuration - extract pin numbers from validated config
+    # GPIO Pin Configuration
     if CONF_PIN_CLOCK in config:
-        pin_clock = config[CONF_PIN_CLOCK]
+        pin_clock = await cg.gpio_pin_expression(config[CONF_PIN_CLOCK])
         cg.add(var.set_pin_clock(pin_clock))
 
     if CONF_PIN_DATA in config:
-        pin_data = config[CONF_PIN_DATA]
+        pin_data = await cg.gpio_pin_expression(config[CONF_PIN_DATA])
         cg.add(var.set_pin_data(pin_data))
 
     if CONF_PIN_STROBE in config:
-        pin_strobe = config[CONF_PIN_STROBE]
+        pin_strobe = await cg.gpio_pin_expression(config[CONF_PIN_STROBE])
         cg.add(var.set_pin_strobe(pin_strobe))
 
-    if CONF_PIN_ZIO in config:
-        pin_zio = config[CONF_PIN_ZIO]
-        cg.add(var.set_pin_zio(pin_zio))
+    # if CONF_PIN_BUTTONS_A in config:
+    #     pin_buttons_a = await cg.gpio_pin_expression(config[CONF_PIN_BUTTONS_A])
+    #     cg.add(var.set_pin_buttons_a(pin_buttons_a))
+
+    # if CONF_PIN_BUTTONS_B in config:
+    #     pin_buttons_b = await cg.gpio_pin_expression(config[CONF_PIN_BUTTONS_B])
+    #     cg.add(var.set_pin_buttons_b(pin_buttons_b))
+
+    if CONF_PIN_BUTTON_ONOFF in config:
+        pin_button_onoff = await cg.gpio_pin_expression(config[CONF_PIN_BUTTON_ONOFF])
+        cg.add(var.set_pin_button_onoff(pin_button_onoff))
+    if CONF_ENABLE in config:
+        enable_switch = await switch.new_switch(config[CONF_ENABLE])
+        cg.add(enable_switch.set_parent(var))
+        cg.add(var.set_enable_switch(enable_switch))
 
     # Binary Sensors
     if CONF_ONE_CUP_READY in config:

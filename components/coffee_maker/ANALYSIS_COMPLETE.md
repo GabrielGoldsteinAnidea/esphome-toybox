@@ -284,3 +284,33 @@ All documents saved in:
 
 **Status**: ✓ Protocol analysis complete, basic implementation done, ready for GPIO integration
 
+1 - Q1 & Q2 PNP Emitter (led drive voltage/flash?)
+2 - onoff and vapor buttons*
+3 - VCC*
+4 - GND*
+5
+6 - VCC
+7 - STB via resistor (pulled down)*
+8 - DATA via resistor (pulled up)*
+9 - CLK via resistor (pulled up)*
+10 - Decalcify button, 1 cup*
+11 - Premachinio button, 2 cup*
+
+U1
+1 (stb) -> R1 -> GND
+1 (stb) -> R7 -> 
+4 (Q0) -> R14 -> Probably leds
+5 (Q1) -> R15 -> Probably leds
+6 (Q2) -> R16 -> LEDs
+7 (Q3) -> R17 -> LEDs
+14 (Q4) -> R18 -> LEDs
+11 (Q7) -> diode D2 -> Vapor, decalcify and premacinato button
+        -> Q2 Base via R11
+12 (Q6) -> diode D1 -> on/off, 1 cup, 2 cup buttons
+        -> Q1 Base via R10
+
+Q1.B -> R10 -> U1.Q6
+Q2.E -> 1,2 Cup and Vapor LEDs
+
+Q2.B -> R11 -> U1.Q7
+Q1.E -> bottom row leds

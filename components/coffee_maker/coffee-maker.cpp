@@ -12,32 +12,35 @@ namespace coffee_maker {
 
 static const char *TAG = "coffee_maker";
 
-// Global pointer for interrupt handling
-static CoffeeMaker *global_coffee_maker = nullptr;
-
 // Interrupt service routine wrappers
-static void IRAM_ATTR clock_isr() {
-  if (global_coffee_maker != nullptr) {
-    global_coffee_maker->handle_clock_interrupt();
+static void IRAM_ATTR clock_isr(CoffeeMaker *arg) {
+  if (arg != nullptr) {
+    arg->handle_clock_interrupt();
   }
 }
 
-static void IRAM_ATTR strobe_isr() {
-  if (global_coffee_maker != nullptr) {
-    global_coffee_maker->handle_strobe_interrupt();
+static void IRAM_ATTR strobe_isr(CoffeeMaker *arg) {
+  if (arg != nullptr) {
+    arg->handle_strobe_interrupt();
   }
+}
+
+void CoffeeMakerEnableSwitch::write_state(bool state) {
+  if (parent_ != nullptr) {
+    parent_->set_enabled(state);
+  }
+  this->publish_state(state);
 }
 
 void CoffeeMaker::setup() {
   ESP_LOGCONFIG(TAG, "Setup Coffee Maker at I2C address 0x%02X", this->get_i2c_address());
   ESP_LOGCONFIG(TAG, "GPIO Configuration:");
-  ESP_LOGCONFIG(TAG, "  Clock: GPIO%u", pin_clock_);
-  ESP_LOGCONFIG(TAG, "  Data: GPIO%u", pin_data_);
-  ESP_LOGCONFIG(TAG, "  Strobe: GPIO%u", pin_strobe_);
-  ESP_LOGCONFIG(TAG, "  Zio: GPIO%u", pin_zio_);
-
-  // Store global pointer for ISR access
-  global_coffee_maker = this;
+  LOG_PIN("  Clock: ", gpio_clock_);
+  LOG_PIN("  Data: ", gpio_data_);
+  LOG_PIN("  Strobe: ", gpio_strobe_);
+  LOG_PIN("  Buttons A: ", buttons_a_.pin());
+  LOG_PIN("  Buttons B: ", buttons_b_.pin());
+  LOG_PIN("  Buttons C: ", button_onoff_.pin());
 
   // Initialize receive buffer and frame assembly
   rx_write_index_ = 0;
@@ -64,29 +67,43 @@ void CoffeeMaker::setup() {
 
   ESP_LOGCONFIG(TAG, "Coffee Maker interface initialized");
   
-  // TODO: Configure GPIO pins using ESPHome's native GPIO abstraction
-  // From sample.ino:
-  //   pinMode(CLOCK_PIN, INPUT);
-  //   pinMode(DATA_PIN, INPUT);
-  //   pinMode(STROBE_PIN, INPUT);
-  //   pinMode(Z_PIN, INPUT);  // Input until button press needed
-  //   attachInterrupt(CLOCK_PIN, clockPulse, RISING, 0);
-  //   attachInterrupt(STROBE_PIN, strobePulse, RISING, 0);
-  //
-  // ESPHome equivalent:
-  // 1. Create InternalGPIOPin objects from pin_clock_, pin_data_, etc.
-  // 2. Attach ISRs using gpio namespace interrupt support
-  // 3. Configure Z pin with open-drain capability
-  // 4. NOTE: Z pin starts as INPUT, switches to OUTPUT when button press needed
-  //
-  // Implementation notes:
-  // - CLOCK and STROBE need rising edge interrupt detection
-  // - DATA and CLOCK pins read during STROBE ISR for multiplexer state
-  // - Z pin open-drain control requires careful mode switching
+  if (gpio_clock_ == nullptr || gpio_data_ == nullptr || gpio_strobe_ == nullptr || button_onoff_.pin() == nullptr) {
+    ESP_LOGE(TAG, "Missing required GPIO pin configuration");
+    this->mark_failed();
+    return;
+  }
+
+  gpio_clock_->setup();
+  gpio_data_->setup();
+  gpio_strobe_->setup();
+  
+  button_onoff_.setup();
+
+  gpio_clock_->pin_mode(gpio::FLAG_INPUT);
+  gpio_data_->pin_mode(gpio::FLAG_INPUT);// | gpio::FLAG_PULLUP);
+  gpio_strobe_->pin_mode(gpio::FLAG_INPUT);
+
+
+  button_onoff_.pin_mode(gpio::FLAG_INPUT);
+
+  isr_clock_ = gpio_clock_->to_isr();
+  isr_data_ = gpio_data_->to_isr();
+  isr_strobe_ = gpio_strobe_->to_isr();
+
+
+  this->set_enabled(false);
+
 }
 
 
 void CoffeeMaker::update() {
+  
+  //ESP_LOGD(TAG, "Data pin %d", gpio_data_->digital_read());
+  
+  if (!enabled_) {
+    return;
+  }
+
   // Process received frames from interrupt handler
   // From sample.ino: 9-byte frames received, parsed for LED states
   
@@ -108,13 +125,17 @@ void CoffeeMaker::update() {
     // When data[1] == 1:
     //   LED[9] = data[3], LED[8] = data[4], LED[7] = data[5], LED[6] = data[6], LED[5] = data[7]
     
-    // TODO: Implement LED state parsing and averaging
-    // For now, log the received frame for debugging
-    ESP_LOGV(TAG, "Frame received: %02X %02X %02X %02X %02X %02X %02X %02X %02X",
-             current_frame_[0], current_frame_[1], current_frame_[2], current_frame_[3],
-             current_frame_[4], current_frame_[5], current_frame_[6], current_frame_[7],
-             current_frame_[8]);
-    
+    if (frame_log_pending_) {
+      frame_log_pending_ = 0;
+      ESP_LOGD(TAG, "Frame received: %02X %02X %02X %02X %02X %02X %02X %02X %02X",
+               current_frame_[0], current_frame_[1], current_frame_[2], current_frame_[3],
+               current_frame_[4], current_frame_[5], current_frame_[6], current_frame_[7],
+               current_frame_[8]);
+    }
+  
+
+
+    #if 0   
     // Temporary direct mapping (without averaging) for testing:
     // Parse LED states from the frame
     uint8_t data_block = current_frame_[1];
@@ -138,8 +159,16 @@ void CoffeeMaker::update() {
     // TODO: Implement state averaging like sample.ino
     // sample.ino averages LED states over 500 strobe cycles (~1 second)
     // to distinguish between ON (always 1), OFF (always 0), and FLASHING (alternating)
+    #endif
+
+    memset(current_frame_, 0, sizeof(current_frame_));
+
+    gpio_clock_->attach_interrupt(clock_isr, this, gpio::INTERRUPT_RISING_EDGE);
+    gpio_strobe_->attach_interrupt(strobe_isr, this, gpio::INTERRUPT_RISING_EDGE);
+
   }
   
+  #if 0
   // Publish sensor states to ESPHome entities
   if (one_cup_ready_ != nullptr) {
     one_cup_ready_->publish_state(one_cup_ready_state_);
@@ -175,6 +204,7 @@ void CoffeeMaker::update() {
   if (coffee_flavor_ != nullptr) {
     coffee_flavor_->publish_state(coffee_flavor_value_);
   }
+  #endif
 }
 
 
@@ -225,9 +255,9 @@ float CoffeeMaker::get_setup_priority() const {
 }
 
 // Setter implementation stubs for controlling the coffee maker
-// From sample.ino analysis: Button commands use Z pin synchronization
+// From sample.ino analysis: Button commands use button line synchronization
 // Buttons (1-6) are mapped to multiplexer sequence positions (0-9)
-// Z pin is driven LOW during the correct sequence to trigger button press
+// Button lines are open-drain and driven LOW during the correct sequence to trigger button press
 
 void CoffeeMaker::set_onoff(bool state) {
   // TODO: Implement power on/off command
@@ -236,6 +266,10 @@ void CoffeeMaker::set_onoff(bool state) {
   // 
   // Implementation: Queue button press, will be executed when
   // multiplexer reaches the correct sequence in strobe_isr()
+  if (!enabled_) {
+    ESP_LOGD(TAG, "Ignored power command while disabled");
+    return;
+  }
   if (state) {
     pending_button_command_ = 1;  // Turn on button
     ESP_LOGD(TAG, "Queuing power ON command");
@@ -251,6 +285,10 @@ void CoffeeMaker::set_one_cup_request() {
   // From sample.ino: sequence mapping shows button ID for one cup
   // mapping[4] = sequence 4 (one cup ready from reading button_int)
   // Implementation: Queue button 4 for execution
+  if (!enabled_) {
+    ESP_LOGD(TAG, "Ignored one cup request while disabled");
+    return;
+  }
   pending_button_command_ = 4;
   ESP_LOGD(TAG, "Queuing one cup brew request");
 }
@@ -258,6 +296,10 @@ void CoffeeMaker::set_one_cup_request() {
 void CoffeeMaker::set_two_cups_request() {
   // TODO: Implement two cups brew request
   // From sample.ino: mapping[5] = sequence 5
+  if (!enabled_) {
+    ESP_LOGD(TAG, "Ignored two cups request while disabled");
+    return;
+  }
   pending_button_command_ = 5;
   ESP_LOGD(TAG, "Queuing two cups brew request");
 }
@@ -265,20 +307,29 @@ void CoffeeMaker::set_two_cups_request() {
 void CoffeeMaker::set_hot_water_request() {
   // TODO: Implement hot water dispense request
   // From sample.ino: mapping[3] = sequence 3 (steam/hot water)
+  if (!enabled_) {
+    ESP_LOGD(TAG, "Ignored hot water request while disabled");
+    return;
+  }
   pending_button_command_ = 3;
   ESP_LOGD(TAG, "Queuing hot water request");
 }
 
 // Interrupt Handler for Clock signal
 void CoffeeMaker::handle_clock_interrupt() {
+  if (!enabled_) {
+    return;
+  }
+
   // Implement clock interrupt handler using ESPHome GPIO abstraction
   // On each CLOCK rising edge, read 1 bit from DATA pin and assemble into byte
   // 
   // From sample.ino: data[clock_pulse] = pinReadFast(DATA_PIN);
   // We accumulate bits into current_byte_ and store when we have 8 bits
   
+
   if (gpio_data_ != nullptr) {
-    bool data_bit = gpio_data_->digital_read();
+    bool data_bit = gpio_data_->digital_read();//isr_data_.digital_read();
     
     // Assemble byte from LSB to MSB (bit 0 first) - matching sample.ino
     current_byte_ |= (data_bit << bit_count_);
@@ -286,58 +337,96 @@ void CoffeeMaker::handle_clock_interrupt() {
     
     // When we have 8 bits, store the byte in current frame
     if (bit_count_ >= 8) {
+      //ESP_LOGD(TAG, "Sub: %02X frame_byte_count_ %d", current_byte_, frame_byte_count_);
+
       if (frame_byte_count_ < 9) {
         current_frame_[frame_byte_count_] = current_byte_;
         frame_byte_count_++;
         
-        // Complete frame received (9 bytes)
-        if (frame_byte_count_ >= 9) {
-          frame_complete_ = 1;
-          frame_byte_count_ = 0;
-        }
+
       }
       current_byte_ = 0;
       bit_count_ = 0;
+      //ESP_LOGD(TAG, "clk bit_count_ reset");
     }
   }
 }
 
 // Interrupt Handler for Strobe signal  
 void CoffeeMaker::handle_strobe_interrupt() {
+  if (!enabled_) {
+    return;
+  }
+
+
+
   // Implement strobe interrupt handler using ESPHome GPIO abstraction
   // STROBE signals end of frame and start of multiplexer read
   // 
   // From sample.ino:
   // 1. Increment sequence_number
-  // 2. Handle any pending Z pin output for button press
+  // 2. Handle any pending button line output for button press
   // 3. Read multiplexer state (S0, S1, S2) from STROBE/DATA/CLOCK pins
   // 4. Indicates 9 bytes of shift register data complete
   
+  //ESP_LOGD(TAG, "STROBE");
+
   // NOTE: This is called after all 8 bits of the 9th byte are received
   // The 35-cycle delay loop in sample.ino appears to be for debouncing
   // the multiplexer lines which are asynchronous to the clock/data signals
   
-  // Complete any partial byte if needed
+  //return;
+  
+  // Reset byte and bit coutner
   if (bit_count_ > 0 && frame_byte_count_ < 9) {
-    current_frame_[frame_byte_count_] = current_byte_;
+    // current_frame_[frame_byte_count_] = current_byte_;
     frame_byte_count_++;
     current_byte_ = 0;
     bit_count_ = 0;
+    //ESP_LOGD(TAG, "stb bit_count_ reset");
   }
   
-  // Ensure frame is marked complete
-  if (frame_byte_count_ > 0) {
+  // // Ensure frame is marked complete
+  // if (frame_byte_count_ > 0) {
+  //   frame_complete_ = 1;
+  // }
+
+  // Complete frame received (9 bytes)
+  if (frame_byte_count_ >= 9) {
     frame_complete_ = 1;
+    frame_log_pending_ = 1;
+    frame_byte_count_ = 0;
+
+    // Disable receive until we can process frame
+    gpio_clock_->detach_interrupt();
+    gpio_strobe_->detach_interrupt();
+    //ESP_LOGD(TAG, "clk frame complete");
+  }
+
+  if (button_active_) {
+    if (button_strobe_counter_++ > 10) {
+      button_active_ = 0;
+      pending_button_command_ = 0;
+      button_strobe_counter_ = 0;
+
+  
+      #if 0
+
+      buttons_c_.set_active_isr(true);
+      #endif
+    } else {
+      
+      #if 0
+
+      buttons_c_.set_active_isr(false);
+      #endif
   }
   
-  // Handle button press control if active
-  // From sample.ino: if (set_output == 1) { pinSetFast(Z_PIN); }
-  // This holds the Z pin LOW to simulate button press
-  if (button_active_ && gpio_zio_ != nullptr) {
-    // Z pin is open-drain: LOW = button pressed (drive to ground)
-    // Setting digital_write(false) should drive LOW
-    // NOTE: May need to configure as open-drain in setup()
-    gpio_zio_->digital_write(false);
+
+  
+  } else if (pending_button_command_ > 0) {
+    button_active_ = 1;
+    button_strobe_counter_ = 0;
   }
   
   // TODO: Read multiplexer state (S0, S1, S2) from GPIO pins
@@ -349,61 +438,41 @@ void CoffeeMaker::handle_strobe_interrupt() {
   // }
   // The multiplexer selects which output to read - used for button synchronization
   // For now, skipping this as it's not critical for basic sensor reading
+
+
 }
 
 
-// Zio pin write (open-drain output mode)
-void CoffeeMaker::zio_write(bool state) {
-  // Open-drain control of Z pin for button press simulation
-  // From sample.ino:
-  //   pinMode(Z_PIN, OUTPUT);  // Set to output when button press active
-  //   pinSetFast(Z_PIN);       // Drive LOW = button press (uses digitalWrite convention inverted)
-  //   pinResetFast(Z_PIN);     // Release = HIGH = no press
-  //   pinMode(Z_PIN, INPUT);   // Return to input after press
-  //
-  // NOTE: Confusing naming in sample.ino:
-  // - pinSetFast appears to mean set OUTPUT and drive LOW (button pressed)
-  // - pinResetFast appears to mean release (HIGH)
-  // This is unusual - normally SET means drive HIGH
-  //
-  // Open-drain behavior:
-  // - When driving: digital_write(false) = pull to ground (button active)
-  // - When releasing: digital_write(true) = tri-state/pull-up (button inactive)
-  
-  if (gpio_zio_ != nullptr) {
-    if (state) {
-      // Button pressed: pull Z pin LOW
-      // Configure pin as output with open-drain
-      gpio_zio_->pin_mode(gpio::FLAG_OUTPUT | gpio::FLAG_OPEN_DRAIN);
-      gpio_zio_->digital_write(false);
-      ESP_LOGD(TAG, "Z pin driven LOW (button pressed)");
-    } else {
-      // Button released: tri-state Z pin (let pull-up release it)
-      gpio_zio_->pin_mode(gpio::FLAG_INPUT | gpio::FLAG_OPEN_DRAIN);
-      gpio_zio_->digital_write(true);
-      ESP_LOGD(TAG, "Z pin released (button inactive)");
-    }
+void CoffeeMaker::set_enabled(bool enabled) {
+  if (enabled_ == enabled) {
+    return;
+  }
+  enabled_ = enabled;
+
+  drive_buttons_(false);
+
+  if (!enabled_) {
+    pending_button_command_ = 0;
+    button_active_ = 0;
+    button_strobe_counter_ = 0;
+    frame_complete_ = 0;
+    frame_log_pending_ = 0;
+
+    gpio_clock_->detach_interrupt();
+    gpio_strobe_->detach_interrupt();
+
+  }else{
+
+    gpio_clock_->attach_interrupt(clock_isr, this, gpio::INTERRUPT_RISING_EDGE);
+    gpio_strobe_->attach_interrupt(strobe_isr, this, gpio::INTERRUPT_RISING_EDGE);
+    
+
   }
 }
 
-// Zio pin read (input mode)
-bool CoffeeMaker::zio_read() {
-  // Read Z pin state in input mode
-  // From sample.ino: This pin reads multiplexer output or button feedback
-  // When configured as input, it should be pulled high and driven low by
-  // external circuitry (the coffee maker's button sense circuit)
-  //
-  // NOTE: In sample.ino, Z_PIN is set to INPUT initially:
-  //   pinMode(Z_PIN, INPUT); // Input until an output is made
-  // And it reads multiplexer outputs, not discrete sensor state
-  
-  if (gpio_zio_ != nullptr) {
-    // Configure as input to read external state
-    gpio_zio_->pin_mode(gpio::FLAG_INPUT);
-    bool state = gpio_zio_->digital_read();
-    return state;
-  }
-  return false;
+void CoffeeMaker::drive_buttons_(bool active) {
+
+  button_onoff_.set_active(active);
 }
 
 }  // namespace coffee_maker
