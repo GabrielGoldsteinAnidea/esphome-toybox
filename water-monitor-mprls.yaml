@@ -97,40 +97,26 @@ binary_sensor:
     on_press:
       then:
         - display.page.show: page1
-        - if:
-            condition:
-              switch.is_on: auto_dotstar
-            then:
-              - light.control:
-                  id: dotstar_light
-                  state: on
-                  effect: None
     on_release:
       then:
         - display.page.show: page2
-        - if:
-            condition:
-              switch.is_on: auto_dotstar
-            then:
-              - light.control:
-                  id: dotstar_light
-                  state: on
-                  effect: Random Twinkle
-  - platform: gpio
-    id: motion_sense
-    name: Motion Detection
-    device_class: motion
-    pin:
-      number: 16
+  # - platform: gpio
+  #   id: motion_sense
+  #   name: Motion Detection
+  #   device_class: motion
+  #   pin:
+  #     number: 16
   - platform: gpio
     id: button_input_0
     name: Button Up
+    internal: true # don't show in home assistant
     pin:
       number: 5
 
   - platform: gpio
     id: button_input_1
     name: Button Select
+    internal: true # don't show in home assistant
     pin:
       number: 4
     on_press:
@@ -139,6 +125,7 @@ binary_sensor:
   - platform: gpio
     id: button_input_2
     name: Button Down
+    internal: true # don't show in home assistant
     pin:
       number: 3
     on_press:
@@ -147,14 +134,13 @@ binary_sensor:
   - platform: gpio
     id: button_input_back
     name: Button 0
+    internal: true # don't show in home assistant
     pin:
       number: 0
       inverted: true
       mode:
         input: true
         pullup: true
-    on_press:
-      - light.toggle: dotstar_light
   # - platform: esp32_touch
   #   id: touchpad_left
   #   name: Touchpad Left
@@ -280,7 +266,9 @@ light:
     id: dotstar_light
     spi_id: spi_led
     data_rate: 40MHz
-    name: APA102 LEDs
+    name: APA102 LEDs 
+    internal: true # don't show in home assistant
+    default_transition_length: 0s
     restore_mode: RESTORE_DEFAULT_OFF
     num_leds: 5
     effects:
@@ -308,33 +296,7 @@ rtttl:
   on_finished_playback:
     - logger.log: 'Song ended!'
 
-switch:
-  - platform: template
-    id: auto_dotstar
-    name: Auto Light Color
-    optimistic: true
-    restore_mode: RESTORE_DEFAULT_OFF
-    on_turn_off:
-      then:
-        - rtttl.play: "alert 1:d=16,o=5,b=120:a"
-        - light.turn_off: dotstar_light
-    on_turn_on:
-      then:
-        - rtttl.play: "alert 1:d=16,o=5,b=120:e6"
-        - light.turn_on: dotstar_light
-        - light.turn_on:
-            id: dotstar_light
-            effect: Rainbow Effect With Custom Values
-number:
-  - platform: template
-    id: light_brightness
-    name: Auto Light Brightness
-    optimistic: true
-    min_value: 0
-    max_value: 1
-    step: 0.01
-    initial_value: 0.5
-    restore_value: true
+
 
 
 
@@ -371,11 +333,11 @@ sensor:
   
   # MPRLS Pressure Sensor for Chlorine Tank Level
   - platform: mprls
-    #address: 0x18
     update_interval: 1s
     pressure:
       id: mprls_pressure
       name: MPRLS Pressure
+      internal: true # don't show in home assistant
       unit_of_measurement: mmHg
 
       filters:
@@ -399,69 +361,93 @@ sensor:
     lambda: |-
       return id(mprls_pressure).state * 35.0 / 30.0 / 1.86645;  // Convert pressure to gallons
     update_interval: 60s
-    on_raw_value:
+    on_value:
       then:
         - lambda: |-
             float level = id(chlorine_tank_level).state;
-            // compute number of LEDs to light (1..5)
-            int num_leds = (int)round((level / 35.0) * 5.0);
-            if (num_leds < 1) num_leds = 1;
-            if (num_leds > 5) num_leds = 5;
-            // Save num to global static var for the templated actions below if needed (not required here)
+            bool is_nan = isnan(level);
+            // compute number of LEDs to light (1..5) only for valid levels
+            int num_leds = 0;
+            if (!is_nan) {
+              num_leds = (int)round((level / 35.0f) * 5.0f);
+              if (num_leds < 1) num_leds = 1;
+              if (num_leds > 5) num_leds = 5;
+            }
+            int range_to = num_leds;// - 1;
+            ESP_LOGD(
+              "chlorine_led",
+              "update level=%.2f gal pressure=%.2f mmHg is_nan=%s num_leds=%d range=0..%d alarm_lt5=%s low_lte10=%s",
+              level,
+              id(mprls_pressure).state,
+              is_nan ? "true" : "false",
+              num_leds,
+              range_to,
+              (!is_nan && level < 5.0f) ? "true" : "false",
+              (!is_nan && level <= 10.0f) ? "true" : "false"
+            );
         - if:
             condition:
-              lambda: 'return id(chlorine_tank_level).state < 5.0;'
+              lambda: 'return isnan(id(chlorine_tank_level).state);'
             then:
-              - script.execute: chlorine_flash
-            else:
-              # Ensure strip is on and set base color (red if <=10, green otherwise)
-              - light.turn_on:
-                  id: dotstar_light
-                  brightness: 50%
-                  effect: None
-                  red: !lambda 'return id(chlorine_tank_level).state <= 10.0 ? 1.0f : 0.0f;'
-                  green: !lambda 'return id(chlorine_tank_level).state <= 10.0 ? 0.0f : 1.0f;'
-                  blue: 0.0
-              # Light the first N LEDs to the chosen color
+              - script.stop: chlorine_flash
+              - lambda: |-
+                  ESP_LOGD("chlorine_led", "branch=nan steady color=yellow clear=0..4 set=0..4");
               - light.addressable_set:
                   id: dotstar_light
                   range_from: 0
-                  range_to: !lambda |-
-                    {
-                      float level = id(chlorine_tank_level).state;
-                      int num_leds = (int)round((level / 35.0) * 5.0);
-                      if (num_leds < 1) num_leds = 1;
-                      if (num_leds > 5) num_leds = 5;
-                      return num_leds - 1;
-                    }
-                  red: !lambda 'return id(chlorine_tank_level).state <= 10.0 ? 1.0f : 0.0f;'
-                  green: !lambda 'return id(chlorine_tank_level).state <= 10.0 ? 0.0f : 1.0f;'
+                  range_to: 4
+                  red: 1.0
+                  green: 1.0
                   blue: 0.0
-              # Turn remaining LEDs off (if any)
+            else:
               - if:
                   condition:
-                    lambda: |-
-                      {
+                    lambda: 'return id(chlorine_tank_level).state < 5.0;'
+                  then:
+                    - lambda: |-
                         float level = id(chlorine_tank_level).state;
-                        int num_leds = (int)round((level / 35.0) * 5.0);
+                        ESP_LOGD("chlorine_led", "branch=<5.0 flash_all_red level=%.2f", level);
+                    - script.execute: chlorine_flash
+                  else:
+                    - lambda: |-
+                        float level = id(chlorine_tank_level).state;
+                        int num_leds = (int)round((level / 35.0f) * 5.0f);
                         if (num_leds < 1) num_leds = 1;
                         if (num_leds > 5) num_leds = 5;
-                        return num_leds < 5;
-                      }
-                  then:
+                        int range_to = num_leds;// - 1;
+                        const char *color = (level <= 10.0f) ? "red" : "green";
+                        ESP_LOGD(
+                          "chlorine_led",
+                          "branch>=5.0 steady level=%.2f color=%s clear=0..4 set=0..%d",
+                          level,
+                          color,
+                          range_to
+                        );
+                    # Stop any prior low-level flashing and apply a deterministic LED frame.
+                    - script.stop: chlorine_flash
+                    - delay: 100ms # slight delay to ensure all prior commands are processed before setting new frame
                     - light.addressable_set:
                         id: dotstar_light
-                        range_from: !lambda |-
-                          {
-                            float level = id(chlorine_tank_level).state;
-                            int num_leds = (int)round((level / 35.0) * 5.0);
-                            if (num_leds < 1) num_leds = 1;
-                            if (num_leds > 5) num_leds = 5;
-                            return num_leds;
-                          }
+                        range_from: 0
                         range_to: 4
                         red: 0.0
                         green: 0.0
+                        blue: 0.0
+                    # Light the first N LEDs (red if <=10, green otherwise)
+                    - delay: 100ms # slight delay to ensure all prior commands are processed before setting new frame
+                    - light.addressable_set:
+                        id: dotstar_light
+                        range_from: 0
+                        range_to: !lambda |-
+                          {
+                            float level = id(chlorine_tank_level).state;
+                            int num_leds = (int)round((level / 35.0f) * 5.0f);
+                            if (num_leds < 1) num_leds = 1;
+                            if (num_leds > 5) num_leds = 5;
+                            return num_leds - 1;
+                          }
+                        red: !lambda 'return id(chlorine_tank_level).state <= 10.0f ? 1.0f : 0.0f;'
+                        green: !lambda 'return id(chlorine_tank_level).state <= 10.0f ? 0.0f : 1.0f;'
                         blue: 0.0
 
   # Internal to Funhouse
@@ -486,7 +472,6 @@ graph:
     color: color_cool_purple
     width: 150
     height: 50
-    y_grid: 10
   - id: pressure_graph
     sensor: dps310_pressure
     duration: 24h
@@ -494,7 +479,6 @@ graph:
     color: color_sea_green
     width: 150
     height: 50
-    y_grid: 100
     #max_range: 1
   - id: chlorine_tank_level_graph
     sensor: chlorine_tank_level
@@ -503,7 +487,6 @@ graph:
     color: color_heavy_blue 
     width: 150
     height: 50
-    y_grid: 10
 display:
   - platform: st7789v
     id: main_lcd
@@ -554,8 +537,11 @@ script:
   - id: chlorine_flash
     mode: restart  # allow re-trigger to restart flashing
     then:
-      - repeat:
-          count: 6        # flash 6 times (adjust)
+      - lambda: |-
+          ESP_LOGD("chlorine_led", "chlorine_flash start: flashing all LEDs red");
+      - while:
+          condition:
+            lambda: 'return !isnan(id(chlorine_tank_level).state) && id(chlorine_tank_level).state < 5.0f;'
           then:
             - light.addressable_set:
                 id: dotstar_light
@@ -564,7 +550,7 @@ script:
                 red: 100%
                 green: 0%
                 blue: 0%
-            - delay: 300ms
+            - delay: 500ms
             - light.addressable_set:
                 id: dotstar_light
                 range_from: 0
@@ -572,5 +558,5 @@ script:
                 red: 0%
                 green: 0%
                 blue: 0%
-            - delay: 300ms
+            - delay: 500ms
 
