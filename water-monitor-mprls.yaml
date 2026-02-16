@@ -45,8 +45,7 @@ logger:
     light.addressable: DEBUG
     i2c.idf: WARN
 
-packages:
-  esp_common: !include common/esp_common_core.yaml
+
 
 time:
   - platform: homeassistant
