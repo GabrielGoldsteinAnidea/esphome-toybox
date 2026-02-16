@@ -6,21 +6,10 @@
     board_build.mcu: esp32s2
     board_build.variant: esp32s2
   on_boot:
-    - priority: 1
-      then:
-        - display.page.show: page2
     - priority: 375
       then:
         - delay: 2s
-        - if:
-            condition:
-              switch.is_on: auto_dotstar
-            then:
-              - light.control:
-                  id: dotstar_light
-                  state: on
-                  brightness: !lambda "return id(light_brightness).state;"
-                  effect: Random Twinkle
+        - script.execute: update_chlorine_leds
 
 # Thanks to this configuration for the initial legwork https://github.com/kbx81/esphome-configs/blob/main/dev/esp-funhouse.yaml
 
@@ -106,15 +95,18 @@ number:
     optimistic: true
     restore_value: true
     initial_value: 0.50
+    set_action:
+      - script.execute: update_chlorine_leds
 
 switch:
   - platform: template
     id: auto_dotstar
     name: Auto Light Color
     optimistic: true
-    restore_mode: RESTORE_DEFAULT_OFF
+    restore_mode: RESTORE_DEFAULT_ON
     on_turn_off:
       then:
+        - script.stop: chlorine_flash
         - rtttl.play: "alert 1:d=16,o=5,b=120:a"
     on_turn_on:
       then:
@@ -296,12 +288,11 @@ light:
   - platform: spi_led_strip
     id: dotstar_light
     spi_id: spi_led
-    
     data_rate: 1MHz
     name: APA102 LEDs
     internal: true # don't show in home assistant
     default_transition_length: 1s
-    restore_mode: RESTORE_DEFAULT_OFF
+    restore_mode: RESTORE_DEFAULT_ON
     num_leds: 5
     # effects:
     #   - addressable_flicker:
@@ -311,41 +302,6 @@ light:
     #   - addressable_twinkle:
     #   - addressable_random_twinkle:
     #   - addressable_fireworks:
-  - platform: partition
-    id: dotstar_led_1
-    name: APA102 LED 1
-    segments:
-      - id: dotstar_light
-        from: 0
-        to: 0
-  - platform: partition
-    id: dotstar_led_2
-    name: APA102 LED 2
-    segments:
-      - id: dotstar_light
-        from: 1
-        to: 1
-  - platform: partition
-    id: dotstar_led_3
-    name: APA102 LED 3
-    segments:
-      - id: dotstar_light
-        from: 2
-        to: 2
-  - platform: partition
-    id: dotstar_led_4
-    name: APA102 LED 4
-    segments:
-      - id: dotstar_light
-        from: 3
-        to: 3
-  - platform: partition
-    id: dotstar_led_5
-    name: APA102 LED 5
-    segments:
-      - id: dotstar_light
-        from: 4
-        to: 4
 
 output:
   - platform: ledc
@@ -427,7 +383,7 @@ sensor:
     # 35 gal tank, 30 in of water.  1 in of water = 1.86645mmHg
     lambda: |-
       return id(mprls_pressure).state * 35.0 / 30.0 / 1.86645;  // Convert pressure to gallons
-    update_interval: 60s
+    update_interval: 15s
     on_value:
       script.execute: update_chlorine_leds
 
@@ -520,36 +476,49 @@ script:
     mode: restart
     then:
       - lambda: |-
-          float level = id(chlorine_tank_level).state;
-          bool is_nan = isnan(level);
-          int num_leds = 1;
-          if (!is_nan) {
-            num_leds = (int)round((level / 35.0f) * 5.0f);
-            if (num_leds < 1) num_leds = 1;
-            if (num_leds > 5) num_leds = 5;
-          }
-          const bool is_low = level <= 10.0f;
-          uint8_t red = is_low ? 255 : 0;
-          uint8_t green = is_low ? 0 : 255;
+          auto brightness_call = id(dotstar_light).turn_on();
+          brightness_call.set_transition_length(0);
+          brightness_call.set_brightness(id(light_brightness).state);
+          brightness_call.set_effect("None");
+          brightness_call.perform();
 
-          ESP_LOGD(
-            "chlorine_led",
-            "branch>=5.0 steady level=%.2f set=0..%d color=%s",
-            level,
-            num_leds - 1,
-            is_low ? "red" : "green"
-          );
-
-          if (is_nan) {
-            ESP_LOGD("chlorine_led", "level is NaN, treating as empty");
-
-            // Force all yellow
-            red = 255;
-            green = 255;
-            num_leds = 5;
+          if (!id(auto_dotstar).state) {
+            id(chlorine_flash).stop();
+            return;
           }
 
+          const float level = id(chlorine_tank_level).state;
           auto *output = static_cast<esphome::light::AddressableLight *>(id(dotstar_light)->get_output());
+
+          if (isnan(level)) {
+            id(chlorine_flash).stop();
+            for (int i = 0; i < 5; i++) {
+              (*output)[i] = Color(255, 255, 0);
+            }
+            output->schedule_show();
+            ESP_LOGW("chlorine_led", "level is NaN, forcing all LEDs yellow");
+            return;
+          }
+
+          if (level < 5.0f) {
+            id(chlorine_flash).execute();
+            ESP_LOGW("chlorine_led", "level %.2f gal: critical, flashing red", level);
+            return;
+          }
+
+          id(chlorine_flash).stop();
+
+          float clamped_level = level;
+          if (clamped_level < 0.0f) clamped_level = 0.0f;
+          if (clamped_level > 35.0f) clamped_level = 35.0f;
+
+          int num_leds = static_cast<int>(roundf((clamped_level / 35.0f) * 5.0f));
+          if (num_leds < 1) num_leds = 1;
+          if (num_leds > 5) num_leds = 5;
+
+          const bool yellow_zone = clamped_level < 15.0f;
+          const uint8_t red = yellow_zone ? 255 : 0;
+          const uint8_t green = 255;
 
           for (int i = 0; i < 5; i++) {
             if (i < num_leds) {
@@ -560,42 +529,30 @@ script:
           }
 
           output->schedule_show();
-
-
-          // if (id(auto_dotstar).state) {
-          //   auto call = id(dotstar_light).turn_on();
-          //   call.set_transition_length(1000); // in ms
-          //   call.set_brightness(id(light_brightness).state);
-          //   call.set_rgb(r_pct, g_pct, b_pct);
-          //   call.set_effect("None");
-          //   call.perform();
-          // }
+          ESP_LOGD("chlorine_led", "level %.2f gal -> leds=%d color=%s", level, num_leds, yellow_zone ? "yellow" : "green");
 
   - id: chlorine_flash
     mode: restart  # allow re-trigger to restart flashing
     then:
       - lambda: |-
           ESP_LOGD("chlorine_led", "chlorine_flash start: flashing all LEDs red");
-      - light.addressable_set:
-          id: dotstar_light
-          # range_from: 0
-          # range_to: 4
-          red: 100%
-          green: 0%
-          blue: 0%
       - while:
           condition:
-            lambda: 'return !isnan(id(chlorine_tank_level).state) && id(chlorine_tank_level).state < 5.0f;'
+            lambda: 'return id(auto_dotstar).state && !isnan(id(chlorine_tank_level).state) && id(chlorine_tank_level).state < 5.0f;'
           then:
-            - lambda: |-
-                ESP_LOGD("chlorine_led", "flash on");
+            - light.addressable_set:
+                id: dotstar_light
+                red: 100%
+                green: 0%
+                blue: 0%
             - light.turn_on:
                 id: dotstar_light
-                brightness: 100%
-            - delay: 4000ms
-            - lambda: |-
-                ESP_LOGD("chlorine_led", "flash off");
+                transition_length: 0ms
+                brightness: !lambda "return id(light_brightness).state;"
+            - delay: 700ms
             - light.turn_off:
                 id: dotstar_light
-            - delay: 4000ms
+                transition_length: 0ms
+            - delay: 700ms
+
 
